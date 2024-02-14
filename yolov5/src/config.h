@@ -18,7 +18,7 @@ const static char* kOutputTensorName = "prob";
 constexpr static int kNumClass = 80;
 
 // Classfication model's number of classes
-constexpr static int kClsNumClass = 1000;
+constexpr static int kClsNumClass = 5;
 
 constexpr static int kBatchSize = 1;
 
