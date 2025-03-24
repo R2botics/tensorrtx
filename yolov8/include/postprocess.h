@@ -6,6 +6,7 @@
 
 // Preprocessing functions
 cv::Rect get_rect(cv::Mat& img, float bbox[4]);
+static float iou(const float lbox[4], const float rbox[4]);
 
 // Processing functions
 void batch_process(std::vector<std::vector<Detection>>& res_batch, const float* decode_ptr_host, int batch_size,

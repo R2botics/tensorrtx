@@ -68,7 +68,7 @@ cv::Rect get_rect_adapt_landmark(cv::Mat& img, float bbox[4], float lmk[kNumberO
     return cv::Rect(int(round(l)), int(round(t)), width, height);
 }
 
-static float iou(float lbox[4], float rbox[4]) {
+static float iou(const float lbox[4], const float rbox[4]) {
     float interBox[] = {
             (std::max)(lbox[0], rbox[0]),
             (std::min)(lbox[2], rbox[2]),
@@ -94,30 +94,135 @@ static bool cmp(const Detection& a, const Detection& b) {
 void nms(std::vector<Detection>& res, float* output, float conf_thresh, float nms_thresh) {
     int det_size = sizeof(Detection) / sizeof(float);
     std::map<float, std::vector<Detection>> m;
-
+ 
+    std::cout << "=== NMS PROCESS START ===" << std::endl;
+    std::cout << "Confidence threshold: " << conf_thresh << std::endl;
+    std::cout << "NMS threshold: " << nms_thresh << std::endl;
+    std::cout << "Detection size in floats: " << det_size << std::endl;
+    std::cout << "Total number of raw detections: " << static_cast<int>(output[0]) << std::endl;
+ 
+    // First collect all valid detections
+    std::vector<Detection> all_valid_detections;
+ 
+    // STEP 1: Filter by confidence and group by class
+    std::cout << "\n--- STEP 1: Initial filtering and grouping by class ---" << std::endl;
+    int valid_dets = 0;
+ 
     for (int i = 0; i < output[0]; i++) {
-        if (output[1 + det_size * i + 4] <= conf_thresh || isnan(output[1 + det_size * i + 4]))
+        float confidence = output[1 + det_size * i + 4];
+ 
+        std::cout << "Detection #" << i << ":" << std::endl;
+        std::cout << "  Confidence: " << confidence << std::endl;
+ 
+        if (confidence <= conf_thresh || isnan(confidence)) {
+            std::cout << "  REJECTED: Confidence below threshold or NaN" << std::endl;
             continue;
+        }
+ 
         Detection det;
         memcpy(&det, &output[1 + det_size * i], det_size * sizeof(float));
+ 
+        std::cout << "  ACCEPTED: Class ID = " << det.class_id << ", Confidence = " << det.conf << ", BBox = [" << det.bbox[0] << ", " << det.bbox[1] << ", " << det.bbox[2] << ", " << det.bbox[3] << "]" << std::endl;
+ 
+        // Print keypoints if they exist
+        std::cout << "  Keypoints: ";
+        for (int k = 0; k < 17; k++) {  // Assuming kNumberOfPoints = 17 for human pose
+            if (k < 5) {  // Print first 5 keypoints only to avoid clutter
+                std::cout << "(" << det.keypoints[k*3] << ", " << det.keypoints[k*3+1] << ", conf=" << det.keypoints[k*3+2] << ") ";
+            }
+        }
+        std::cout << "..." << std::endl;
+ 
+        // Store for later keypoint combination
+        all_valid_detections.push_back(det);
+ 
         if (m.count(det.class_id) == 0)
             m.emplace(det.class_id, std::vector<Detection>());
         m[det.class_id].push_back(det);
+        valid_dets++;
     }
+ 
+    std::cout << "Total valid detections after filtering: " << valid_dets << std::endl;
+    std::cout << "Number of unique classes: " << m.size() << std::endl;
+ 
+    // STEP 2: Process each class
+    std::cout << "\n--- STEP 2: Processing detections by class ---" << std::endl;
+ 
     for (auto it = m.begin(); it != m.end(); it++) {
+        float class_id = it->first;
         auto& dets = it->second;
+ 
+        std::cout << "\nProcessing class ID " << class_id << " with " << dets.size() << " detections" << std::endl;
+        std::cout << "Sorting detections by confidence..." << std::endl;
+ 
+        // Sort by confidence
         std::sort(dets.begin(), dets.end(), cmp);
-        for (size_t m = 0; m < dets.size(); ++m) {
-            auto& item = dets[m];
-            res.push_back(item);
-            for (size_t n = m + 1; n < dets.size(); ++n) {
-                if (iou(item.bbox, dets[n].bbox) > nms_thresh) {
-                    dets.erase(dets.begin() + n);
-                    --n;
+ 
+        std::cout << "After sorting, confidence values: ";
+        for (size_t i = 0; i < std::min(dets.size(), size_t(5)); i++) {
+            std::cout << dets[i].conf << " ";
+        }
+        if (dets.size() > 5) std::cout << "...";
+        std::cout << std::endl;
+ 
+        for (size_t sz = 0; sz < dets.size(); ++sz) {
+            std::cout << "\nExamining detection #" << sz << " (Class ID " << class_id << ", Confidence " << dets[sz].conf << ")" << std::endl;
+ 
+            auto& item = dets[sz];
+            // NEW: Enhance keypoints before adding to results
+            // Search for valid keypoints in all detections with high IoU
+            for (int kp_idx = 0; kp_idx < kNumberOfPoints; kp_idx++) {
+                int idx = kp_idx * 3;
+                // If this keypoint is invalid or has low confidence
+                if (item.keypoints[idx] < 0 || 
+                    item.keypoints[idx+1] < 0 || 
+                    item.keypoints[idx+2] < 0.5) {
+                    // Look for a valid keypoint in other detections
+                    for (const auto& other_det : all_valid_detections) {
+                        // Skip self comparison or detections with low IoU
+                        if (&other_det == &item || iou(item.bbox, other_det.bbox) < 0.5) {
+                            continue;
+                        }
+                        // If the other detection has a valid keypoint for this position
+                        if (other_det.keypoints[idx] >= 0 && 
+                            other_det.keypoints[idx+1] >= 0 && 
+                            other_det.keypoints[idx+2] >= 0.5) {
+                            // Replace with the valid keypoint
+                            item.keypoints[idx] = other_det.keypoints[idx];
+                            item.keypoints[idx+1] = other_det.keypoints[idx+1];
+                            item.keypoints[idx+2] = other_det.keypoints[idx+2];
+                            break; // Found a valid keypoint, stop searching
+                        }
+                    }
                 }
             }
+
+            res.push_back(item);
+
+            std::cout << "  KEPT: Added to result vector (index " << res.size() - 1 << ")" << std::endl;
+            std::cout << "  Checking for overlapping detections to suppress..." << std::endl;
+
+            int suppressed = 0;
+            for (size_t n = sz + 1; n < dets.size(); ++n) {
+                float overlap = iou(item.bbox, dets[n].bbox);
+                std::cout << "    Comparing with detection #" << n << " (Confidence " << dets[n].conf << ")" << std::endl;
+                std::cout << "    IoU = " << overlap << " (threshold: " << nms_thresh << ")" << std::endl;
+ 
+                if (overlap > nms_thresh) {
+                    std::cout << "    SUPPRESSED: IoU " << overlap << " > threshold " << nms_thresh << std::endl;
+                    dets.erase(dets.begin() + n);
+                    --n;
+                    suppressed++;
+                } else {
+                    std::cout << "    KEPT: IoU " << overlap << " <= threshold " << nms_thresh << std::endl;
+                }
+            }
+            std::cout << "  Suppressed " << suppressed << " overlapping detection(s)" << std::endl;
         }
     }
+
+    std::cout << "\n=== NMS PROCESS COMPLETE ===" << std::endl;
+    std::cout << "Final number of detections after NMS: " << res.size() << std::endl;
 }
 
 void batch_nms(std::vector<std::vector<Detection>>& res_batch, float* output, int batch_size, int output_size,
