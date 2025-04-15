@@ -6,6 +6,7 @@
 
 // Preprocessing functions
 cv::Rect get_rect(cv::Mat& img, float bbox[4]);
+cv::Mat scale_mask(cv::Mat mask, cv::Mat img);
 static float iou(const float lbox[4], const float rbox[4]);
 
 // Processing functions
