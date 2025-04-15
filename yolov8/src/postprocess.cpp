@@ -68,7 +68,7 @@ cv::Rect get_rect_adapt_landmark(cv::Mat& img, float bbox[4], float lmk[kNumberO
     return cv::Rect(int(round(l)), int(round(t)), width, height);
 }
 
-static float iou(float lbox[4], float rbox[4]) {
+static float iou(const float lbox[4], const float rbox[4]) {
     float interBox[] = {
             (std::max)(lbox[0], rbox[0]),
             (std::min)(lbox[2], rbox[2]),
@@ -95,25 +95,74 @@ void nms(std::vector<Detection>& res, float* output, float conf_thresh, float nm
     int det_size = sizeof(Detection) / sizeof(float);
     std::map<float, std::vector<Detection>> m;
 
+    // First collect all valid detections
+    std::vector<Detection> all_valid_detections;
+    // STEP 1: Filter by confidence and group by class
+    int valid_dets = 0;
     for (int i = 0; i < output[0]; i++) {
-        if (output[1 + det_size * i + 4] <= conf_thresh || isnan(output[1 + det_size * i + 4]))
+        float confidence = output[1 + det_size * i + 4];
+        if (confidence <= conf_thresh || isnan(confidence)) {
             continue;
+        }
         Detection det;
         memcpy(&det, &output[1 + det_size * i], det_size * sizeof(float));
+        // Store for later keypoint combination
+        all_valid_detections.push_back(det);
         if (m.count(det.class_id) == 0)
             m.emplace(det.class_id, std::vector<Detection>());
         m[det.class_id].push_back(det);
+        valid_dets++;
     }
+
     for (auto it = m.begin(); it != m.end(); it++) {
+        float class_id = it->first;
         auto& dets = it->second;
+        // Sort by confidence
         std::sort(dets.begin(), dets.end(), cmp);
-        for (size_t m = 0; m < dets.size(); ++m) {
-            auto& item = dets[m];
+        for (size_t i = 0; i < std::min(dets.size(), size_t(5)); i++) {
+            std::cout << dets[i].conf << " ";
+        }
+        if (dets.size() > 5) std::cout << "...";
+        std::cout << std::endl;
+        for (size_t sz = 0; sz < dets.size(); ++sz) {
+            auto& item = dets[sz];
+            // NEW: Enhance keypoints before adding to results
+            // Search for valid keypoints in all detections with high IoU
+            for (int kp_idx = 0; kp_idx < kNumberOfPoints; kp_idx++) {
+                int idx = kp_idx * 3;
+                // If this keypoint is invalid or has low confidence
+                if (item.keypoints[idx] < 0 || 
+                    item.keypoints[idx+1] < 0 || 
+                    item.keypoints[idx+2] < 0.5) {
+                    // Look for a valid keypoint in other detections
+                    for (const auto& other_det : all_valid_detections) {
+                        // Skip self comparison or detections with low IoU
+                        if (&other_det == &item || iou(item.bbox, other_det.bbox) < 0.5) {
+                            continue;
+                        }
+                        // If the other detection has a valid keypoint for this position
+                        if (other_det.keypoints[idx] >= 0 && 
+                            other_det.keypoints[idx+1] >= 0 && 
+                            other_det.keypoints[idx+2] >= 0.5) {
+                            // Replace with the valid keypoint
+                            item.keypoints[idx] = other_det.keypoints[idx];
+                            item.keypoints[idx+1] = other_det.keypoints[idx+1];
+                            item.keypoints[idx+2] = other_det.keypoints[idx+2];
+                            break; // Found a valid keypoint, stop searching
+                        }
+                    }
+                }
+            }
+
             res.push_back(item);
-            for (size_t n = m + 1; n < dets.size(); ++n) {
-                if (iou(item.bbox, dets[n].bbox) > nms_thresh) {
+
+            int suppressed = 0;
+            for (size_t n = sz + 1; n < dets.size(); ++n) {
+                float overlap = iou(item.bbox, dets[n].bbox);
+                if (overlap > nms_thresh) {
                     dets.erase(dets.begin() + n);
                     --n;
+                    suppressed++;
                 }
             }
         }
