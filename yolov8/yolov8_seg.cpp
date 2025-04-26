@@ -1,4 +1,3 @@
-
 #include <fstream>
 #include <iostream>
 #include <opencv2/opencv.hpp>
@@ -246,7 +245,9 @@ int main(int argc, char** argv) {
     deserialize_engine(engine_name, &runtime, &engine, &context);
     cudaStream_t stream;
     CUDA_CHECK(cudaStreamCreate(&stream));
-    cuda_preprocess_init(kMaxInputImageSize);
+    uint8_t* img_buffer_host = nullptr;
+    uint8_t* img_buffer_device = nullptr;
+    cuda_preprocess_init(kMaxInputImageSize, &img_buffer_host, &img_buffer_device);
     auto out_dims = engine->getBindingDimensions(1);
     model_bboxes = out_dims.d[0];
     // Prepare cpu and gpu buffers
@@ -281,7 +282,11 @@ int main(int argc, char** argv) {
             img_name_batch.push_back(file_names[j]);
         }
         // Preprocess
-        cuda_batch_preprocess(img_batch, device_buffers[0], kInputW, kInputH, stream);
+        auto start = std::chrono::system_clock::now();
+        cuda_batch_preprocess(img_batch, device_buffers[0], kInputW, kInputH, stream, img_buffer_host, img_buffer_device);
+        auto end = std::chrono::system_clock::now();
+        std::cout << "preprocess time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+                  << "ms" << std::endl;
         // Run inference
         infer(*context, stream, (void**)device_buffers, output_buffer_host, output_seg_buffer_host, kBatchSize,
               decode_ptr_host, decode_ptr_device, model_bboxes, cuda_post_process);
@@ -313,7 +318,7 @@ int main(int argc, char** argv) {
     delete[] decode_ptr_host;
     delete[] output_buffer_host;
     delete[] output_seg_buffer_host;
-    cuda_preprocess_destroy();
+    cuda_preprocess_destroy(img_buffer_host, img_buffer_device);
     // Destroy the engine
     delete context;
     delete engine;
