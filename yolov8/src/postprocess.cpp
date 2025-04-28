@@ -91,82 +91,176 @@ static bool cmp(const Detection& a, const Detection& b) {
     return a.conf > b.conf;
 }
 
-void nms(std::vector<Detection>& res, float* output, float conf_thresh, float nms_thresh) {
+void nms(std::vector<Detection> &res, float *output, float conf_thresh, float nms_thresh) {
     int det_size = sizeof(Detection) / sizeof(float);
-    std::map<float, std::vector<Detection>> m;
+    std::map<float, std::vector<Detection> > m;
 
-    // First collect all valid detections
-    std::vector<Detection> all_valid_detections;
+    std::cout << "=== NMS PROCESS START ===" << std::endl;
+    std::cout << "Confidence threshold: " << conf_thresh << std::endl;
+    std::cout << "NMS threshold: " << nms_thresh << std::endl;
+    std::cout << "Detection size in floats: " << det_size << std::endl;
+    std::cout << "Total number of raw detections: " << static_cast<int>(output[0]) << std::endl;
+
     // STEP 1: Filter by confidence and group by class
+    std::cout << "\n--- STEP 1: Initial filtering and grouping by class ---" << std::endl;
     int valid_dets = 0;
+
     for (int i = 0; i < output[0]; i++) {
         float confidence = output[1 + det_size * i + 4];
+
+        std::cout << "Detection #" << i << ":" << std::endl;
+        std::cout << "  Confidence: " << confidence << std::endl;
+
         if (confidence <= conf_thresh || isnan(confidence)) {
+            std::cout << "  REJECTED: Confidence below threshold or NaN" << std::endl;
             continue;
         }
+
         Detection det;
         memcpy(&det, &output[1 + det_size * i], det_size * sizeof(float));
-        // Store for later keypoint combination
-        all_valid_detections.push_back(det);
+
+        std::cout << "  ACCEPTED: Class ID = " << det.class_id
+                << ", Confidence = " << det.conf
+                << ", BBox = [" << det.bbox[0] << ", " << det.bbox[1]
+                << ", " << det.bbox[2] << ", " << det.bbox[3] << "]" << std::endl;
+
+        // Print keypoints if they exist
+        std::cout << "  Keypoints: ";
+        for (int k = 0; k < kNumberOfPoints; k++) {
+            // Assuming kNumberOfPoints = 4
+            if (k < 4) {
+                // Print all 4 keypoints
+                std::cout << "(" << det.keypoints[k * 3] << ", "
+                        << det.keypoints[k * 3 + 1] << ", conf="
+                        << det.keypoints[k * 3 + 2] << ") ";
+            }
+        }
+        std::cout << "..." << std::endl;
+
         if (m.count(det.class_id) == 0)
             m.emplace(det.class_id, std::vector<Detection>());
         m[det.class_id].push_back(det);
         valid_dets++;
     }
 
+    std::cout << "Total valid detections after filtering: " << valid_dets << std::endl;
+    std::cout << "Number of unique classes: " << m.size() << std::endl;
+
+    // STEP 2: Process each class
+    std::cout << "\n--- STEP 2: Processing detections by class ---" << std::endl;
+
     for (auto it = m.begin(); it != m.end(); it++) {
         float class_id = it->first;
-        auto& dets = it->second;
+        auto &dets = it->second;
+
+        std::cout << "\nProcessing class ID " << class_id << " with " << dets.size() << " detections" << std::endl;
+        std::cout << "Sorting detections by confidence..." << std::endl;
+
         // Sort by confidence
         std::sort(dets.begin(), dets.end(), cmp);
+
+        std::cout << "After sorting, confidence values: ";
         for (size_t i = 0; i < std::min(dets.size(), size_t(5)); i++) {
             std::cout << dets[i].conf << " ";
         }
         if (dets.size() > 5) std::cout << "...";
         std::cout << std::endl;
+
         for (size_t sz = 0; sz < dets.size(); ++sz) {
-            auto& item = dets[sz];
-            // NEW: Enhance keypoints before adding to results
-            // Search for valid keypoints in all detections with high IoU
+            std::cout << "\nExamining detection #" << sz << " (Class ID " << class_id
+                    << ", Confidence " << dets[sz].conf << ")" << std::endl;
+            auto &item = dets[sz];
+            // NEW: Create a copy of this detection to which we'll add any missing keypoints
+            Detection enhanced_item = item;
+            // Check which keypoints are missing in the high-confidence detection
+            std::vector<int> missing_keypoints;
             for (int kp_idx = 0; kp_idx < kNumberOfPoints; kp_idx++) {
                 int idx = kp_idx * 3;
-                // If this keypoint is invalid or has low confidence
-                if (item.keypoints[idx] < 0 || 
-                    item.keypoints[idx+1] < 0 || 
-                    item.keypoints[idx+2] < 0.5) {
-                    // Look for a valid keypoint in other detections
-                    for (const auto& other_det : all_valid_detections) {
-                        // Skip self comparison or detections with low IoU
-                        if (&other_det == &item || iou(item.bbox, other_det.bbox) < 0.5) {
-                            continue;
+                if (enhanced_item.keypoints[idx] < 0 ||
+                    enhanced_item.keypoints[idx + 1] < 0 ||
+                    enhanced_item.keypoints[idx + 2] < 0) {
+                    missing_keypoints.push_back(kp_idx);
+                }
+            }
+            // If we have missing keypoints, try to find them in other detections
+            if (!missing_keypoints.empty()) {
+                std::cout << "  Detection has " << missing_keypoints.size() << " missing keypoints." << std::endl;
+                // Look through other detections with high IoU
+                for (size_t other_idx = 0; other_idx < dets.size(); other_idx++) {
+                    if (other_idx == sz) continue; // Skip self comparison
+                    const auto &other_det = dets[other_idx];
+                    float overlap = iou(enhanced_item.bbox, other_det.bbox);
+                    // Only consider detections with significant overlap
+                    if (overlap > 0.7) {
+                        // High threshold to ensure same object
+                        std::cout << "  Checking detection #" << other_idx << " (IoU: " << overlap << ")" << std::endl;
+                        // Check if this detection has any of our missing keypoints
+                        for (int missing_kp: missing_keypoints) {
+                            int idx = missing_kp * 3;
+                            if (other_det.keypoints[idx] >= 0 &&
+                                other_det.keypoints[idx + 1] >= 0 &&
+                                other_det.keypoints[idx + 2] > 0.5) {
+                                std::cout << "    Found valid keypoint " << missing_kp << " in detection #" << other_idx
+                                        << std::endl;
+                                // Copy this keypoint to our enhanced detection
+                                enhanced_item.keypoints[idx] = other_det.keypoints[idx];
+                                enhanced_item.keypoints[idx + 1] = other_det.keypoints[idx + 1];
+                                enhanced_item.keypoints[idx + 2] = other_det.keypoints[idx + 2];
+                                // Remove this keypoint from the missing list
+                                missing_keypoints.erase(
+                                    std::remove(missing_keypoints.begin(), missing_keypoints.end(), missing_kp),
+                                    missing_keypoints.end());
+                                // If we've found all missing keypoints, stop searching
+                                if (missing_keypoints.empty()) {
+                                    std::cout << "    All missing keypoints found!" << std::endl;
+                                    break;
+                                }
+                            }
                         }
-                        // If the other detection has a valid keypoint for this position
-                        if (other_det.keypoints[idx] >= 0 && 
-                            other_det.keypoints[idx+1] >= 0 && 
-                            other_det.keypoints[idx+2] >= 0.5) {
-                            // Replace with the valid keypoint
-                            item.keypoints[idx] = other_det.keypoints[idx];
-                            item.keypoints[idx+1] = other_det.keypoints[idx+1];
-                            item.keypoints[idx+2] = other_det.keypoints[idx+2];
-                            break; // Found a valid keypoint, stop searching
+                        // If we've found all missing keypoints, stop searching
+                        if (missing_keypoints.empty()) {
+                            break;
                         }
                     }
                 }
+                // Print the results of our search
+                if (missing_keypoints.empty()) {
+                    std::cout << "  Successfully found all missing keypoints!" << std::endl;
+                } else {
+                    std::cout << "  Still missing " << missing_keypoints.size() << " keypoints after search." <<
+                            std::endl;
+                }
             }
+            // Add the enhanced detection to the results
+            res.push_back(enhanced_item);
 
-            res.push_back(item);
+            std::cout << "  KEPT: Added to result vector (index " << res.size() - 1 << ")" << std::endl;
+            std::cout << "  Checking for overlapping detections to suppress..." << std::endl;
 
             int suppressed = 0;
             for (size_t n = sz + 1; n < dets.size(); ++n) {
                 float overlap = iou(item.bbox, dets[n].bbox);
+                std::cout << "    Comparing with detection #" << n
+                        << " (Confidence " << dets[n].conf << ")" << std::endl;
+                std::cout << "    IoU = " << overlap << " (threshold: " << nms_thresh << ")" << std::endl;
+
                 if (overlap > nms_thresh) {
+                    std::cout << "    SUPPRESSED: IoU " << overlap << " > threshold "
+                            << nms_thresh << std::endl;
                     dets.erase(dets.begin() + n);
                     --n;
                     suppressed++;
+                } else {
+                    std::cout << "    KEPT: IoU " << overlap << " <= threshold "
+                            << nms_thresh << std::endl;
                 }
             }
+            std::cout << "  Suppressed " << suppressed << " overlapping detection(s)" << std::endl;
         }
     }
+
+    std::cout << "\n=== NMS PROCESS COMPLETE ===" << std::endl;
+    std::cout << "Final number of detections after NMS: " << res.size() << std::endl;
 }
 
 void batch_nms(std::vector<std::vector<Detection>>& res_batch, float* output, int batch_size, int output_size,
