@@ -94,30 +94,31 @@ class Yolov10TRT(object):
         cuda_inputs = []
         host_outputs = []
         cuda_outputs = []
-        bindings = []
+        input_binding_names = []
+        output_binding_names = []
 
-        for binding in engine:
-            print('bingding:', binding, engine.get_binding_shape(binding))
-            self.batch_size = engine.get_binding_shape(binding)[0]
-            if self.batch_size != 1:
-                raise ValueError("Only support batch_size=1")
-            size = trt.volume(engine.get_binding_shape(binding))
-            dtype = engine.get_binding_dtype(binding)
-            dtype = trt.nptype(dtype)
+        for binding_name in engine:
+            shape = engine.get_tensor_shape(binding_name)
+            print('binding_name:', binding_name, shape)
+            size = trt.volume(shape)
+            dtype = trt.nptype(engine.get_tensor_dtype(binding_name))
             # Allocate host and device buffers
             host_mem = cuda.pagelocked_empty(size, dtype)
             cuda_mem = cuda.mem_alloc(host_mem.nbytes)
             # Append the device buffer to device bindings.
-            bindings.append(int(cuda_mem))
             # Append to the appropriate list.
-            if engine.binding_is_input(binding):
-                self.input_w = engine.get_binding_shape(binding)[-1]
-                self.input_h = engine.get_binding_shape(binding)[-2]
+            if engine.get_tensor_mode(binding_name) == trt.TensorIOMode.INPUT:
+                input_binding_names.append(binding_name)
+                self.input_w = shape[-1]
+                self.input_h = shape[-2]
                 host_inputs.append(host_mem)
                 cuda_inputs.append(cuda_mem)
-            else:
+            elif engine.get_tensor_mode(binding_name) == trt.TensorIOMode.OUTPUT:
+                output_binding_names.append(binding_name)
                 host_outputs.append(host_mem)
                 cuda_outputs.append(cuda_mem)
+            else:
+                print('unknow:', binding_name)
 
         # Store
         self.stream = stream
@@ -127,7 +128,9 @@ class Yolov10TRT(object):
         self.cuda_inputs = cuda_inputs
         self.host_outputs = host_outputs
         self.cuda_outputs = cuda_outputs
-        self.bindings = bindings
+        self.input_binding_names = input_binding_names
+        self.output_binding_names = output_binding_names
+        self.batch_size = engine.get_tensor_shape(input_binding_names[0])[0]
         print('batch_size:', self.batch_size)
         self.det_output_length = host_outputs[0].shape[0]
 
@@ -142,7 +145,8 @@ class Yolov10TRT(object):
         cuda_inputs = self.cuda_inputs
         host_outputs = self.host_outputs
         cuda_outputs = self.cuda_outputs
-        bindings = self.bindings
+        input_binding_names = self.input_binding_names
+        output_binding_names = self.output_binding_names
         # Do image preprocess
         batch_image_raw = []
         batch_origin_h = []
@@ -162,7 +166,9 @@ class Yolov10TRT(object):
         # Transfer input data  to the GPU.
         cuda.memcpy_htod_async(cuda_inputs[0], host_inputs[0], stream)
         # Run inference.
-        context.execute_async_v2(bindings=bindings, stream_handle=stream.handle)
+        context.set_tensor_address(input_binding_names[0], cuda_inputs[0])
+        context.set_tensor_address(output_binding_names[0], cuda_outputs[0])
+        context.execute_async_v3(stream_handle=stream.handle)
         # Transfer predictions back from the GPU.
         cuda.memcpy_dtoh_async(host_outputs[0], cuda_outputs[0], stream)
         # Synchronize the stream
@@ -386,13 +392,14 @@ class Yolov10TRT(object):
 
 
 class inferThread(threading.Thread):
-    def __init__(self, yolov8_wrapper, image_path_batch):
+    def __init__(self, yolov10_wrapper, image_path_batch):
         threading.Thread.__init__(self)
-        self.yolov8_wrapper = yolov8_wrapper
+        self.yolov10_wrapper = yolov10_wrapper
         self.image_path_batch = image_path_batch
 
     def run(self):
-        batch_image_raw, use_time = self.yolov8_wrapper.infer(self.yolov8_wrapper.get_raw_image(self.image_path_batch))
+        batch_image_raw, use_time = self.yolov10_wrapper.infer(
+            self.yolov10_wrapper.get_raw_image(self.image_path_batch))
         for i, img_path in enumerate(self.image_path_batch):
             parent, filename = os.path.split(img_path)
             save_name = os.path.join('output', filename)
@@ -402,26 +409,26 @@ class inferThread(threading.Thread):
 
 
 class warmUpThread(threading.Thread):
-    def __init__(self, yolov8_wrapper):
+    def __init__(self, yolov10_wrapper):
         threading.Thread.__init__(self)
-        self.yolov8_wrapper = yolov8_wrapper
+        self.yolov10_wrapper = yolov10_wrapper
 
     def run(self):
-        batch_image_raw, use_time = self.yolov8_wrapper.infer(self.yolov8_wrapper.get_raw_image_zeros())
+        batch_image_raw, use_time = self.yolov10_wrapper.infer(self.yolov10_wrapper.get_raw_image_zeros())
         print('warm_up->{}, time->{:.2f}ms'.format(batch_image_raw[0].shape, use_time * 1000))
 
 
 if __name__ == "__main__":
     # load custom plugin and engine
     PLUGIN_LIBRARY = "build/libmyplugins.so"
-    engine_file_path = "yolov8s.engine"
+    engine_file_path = "yolov10n.engine"
 
     if len(sys.argv) > 1:
         engine_file_path = sys.argv[1]
     if len(sys.argv) > 2:
         PLUGIN_LIBRARY = sys.argv[2]
 
-    ctypes.CDLL(PLUGIN_LIBRARY)
+    ctypes.CDLL(PLUGIN_LIBRARY, winmode=0)
 
     # load coco labels
 
@@ -444,23 +451,23 @@ if __name__ == "__main__":
         shutil.rmtree('output/')
     os.makedirs('output/')
     # a Yolov10TRT instance
-    yolov8_wrapper = Yolov10TRT(engine_file_path)
+    yolov10_wrapper = Yolov10TRT(engine_file_path)
     try:
-        print('batch size is', yolov8_wrapper.batch_size)
+        print('batch size is', yolov10_wrapper.batch_size)
 
         image_dir = "images/"
-        image_path_batches = get_img_path_batches(yolov8_wrapper.batch_size, image_dir)
+        image_path_batches = get_img_path_batches(yolov10_wrapper.batch_size, image_dir)
 
         for i in range(10):
             # create a new thread to do warm_up
-            thread1 = warmUpThread(yolov8_wrapper)
+            thread1 = warmUpThread(yolov10_wrapper)
             thread1.start()
             thread1.join()
         for batch in image_path_batches:
             # create a new thread to do inference
-            thread1 = inferThread(yolov8_wrapper, batch)
+            thread1 = inferThread(yolov10_wrapper, batch)
             thread1.start()
             thread1.join()
     finally:
         # destroy the instance
-        yolov8_wrapper.destroy()
+        yolov10_wrapper.destroy()

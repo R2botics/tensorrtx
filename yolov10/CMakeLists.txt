@@ -26,8 +26,8 @@ else()
   link_directories(/usr/local/cuda/lib64)
 
   # tensorrt
-  include_directories(/workspace/shared/TensorRT-8.4.3.1/include)
-  link_directories(/workspace/shared/TensorRT-8.4.3.1/lib)
+  include_directories(/workspace/shared/TensorRT-10.2.0.19/include/)
+  link_directories(/workspace/shared/TensorRT-10.2.0.19/lib/)
 
   # include_directories(/home/lindsay/TensorRT-7.2.3.4/include)
   # link_directories(/home/lindsay/TensorRT-7.2.3.4/lib)
@@ -41,7 +41,6 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 
 file(GLOB_RECURSE SRCS ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/src/*.cu)
 add_executable(yolov10_det ${PROJECT_SOURCE_DIR}/yolov10_det.cpp ${SRCS})
-
 target_link_libraries(yolov10_det nvinfer)
 target_link_libraries(yolov10_det cudart)
 target_link_libraries(yolov10_det myplugins)

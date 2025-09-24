@@ -1,23 +1,12 @@
 ## Introduce
 
-Yolov10 model supports TensorRT-8.
+Yolov10 model supports TensorRT-10.
 
 ## Environment
 
 CUDA: 11.8
-
 CUDNN: 8.9.1.23
-
-TensorRT: TensorRT-8.2.5.1   / GPU: RTX1650
-
-TensorRT: TensorRT-8.4.3.1   / GPU: RTX4070
-
-```
-# faq
-Error Code 1: Internal Error (Unsupported SM: 0x809)
-The architecture of the higher version does not support the use of the earlier version of TensorRT,
-and you need to upgrade the TensorRT version
-```
+TensorRT: TensorRT-10.2.0.19
 
 ## Support
 
@@ -37,7 +26,7 @@ git clone https://github.com/THU-MIG/yolov10.git
 cd yolov10/
 wget https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10n.pt
 
-git clone https://github.com/wang-xinyu/tensorrtx.git
+git clone -b trt10 https://github.com/wang-xinyu/tensorrtx.git
 cp [PATH-TO-TENSORRTX]/yolov10/gen_wts.py .
 
 python gen_wts.py -w yolov10n.pt -o yolov10n.wts

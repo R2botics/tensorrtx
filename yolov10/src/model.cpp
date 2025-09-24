@@ -75,7 +75,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetN(nvinfer1::IBuilder* builder, nvinf
     float scale[] = {1.0, 1.0, 2.0, 2.0};
     nvinfer1::IResizeLayer* upsample11 = network->addResize(*conv10->getOutput(0));
     assert(upsample11);
-    upsample11->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample11->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample11->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor12[] = {upsample11->getOutput(0), conv6->getOutput(0)};
@@ -86,7 +86,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetN(nvinfer1::IBuilder* builder, nvinf
 
     nvinfer1::IResizeLayer* upsample14 = network->addResize(*conv13->getOutput(0));
     assert(upsample14);
-    upsample14->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample14->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample14->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor15[] = {upsample14->getOutput(0), conv4->getOutput(0)};
@@ -257,7 +257,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetN(nvinfer1::IBuilder* builder, nvinf
     yolo->getOutput(0)->setName(kOutputTensorName);
     network->markOutput(*yolo->getOutput(0));
 
-    config->setMaxWorkspaceSize(16 * (1 << 20));
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 16 * (1 << 20));
 
 #if defined(USE_FP16)
     config->setFlag(nvinfer1::BuilderFlag::kFP16);
@@ -327,7 +327,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetS(nvinfer1::IBuilder* builder, nvinf
     float scale[] = {1.0, 1.0, 2.0, 2.0};
     nvinfer1::IResizeLayer* upsample11 = network->addResize(*conv10->getOutput(0));
     assert(upsample11);
-    upsample11->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample11->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample11->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor12[] = {upsample11->getOutput(0), conv6->getOutput(0)};
@@ -338,7 +338,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetS(nvinfer1::IBuilder* builder, nvinf
 
     nvinfer1::IResizeLayer* upsample14 = network->addResize(*conv13->getOutput(0));
     assert(upsample14);
-    upsample14->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample14->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample14->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor15[] = {upsample14->getOutput(0), conv4->getOutput(0)};
@@ -509,7 +509,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetS(nvinfer1::IBuilder* builder, nvinf
     yolo->getOutput(0)->setName(kOutputTensorName);
     network->markOutput(*yolo->getOutput(0));
 
-    config->setMaxWorkspaceSize(16 * (1 << 20));
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 16 * (1 << 20));
 
 #if defined(USE_FP16)
     config->setFlag(nvinfer1::BuilderFlag::kFP16);
@@ -579,7 +579,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetM(nvinfer1::IBuilder* builder, nvinf
     float scale[] = {1.0, 1.0, 2.0, 2.0};
     nvinfer1::IResizeLayer* upsample11 = network->addResize(*conv10->getOutput(0));
     assert(upsample11);
-    upsample11->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample11->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample11->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor12[] = {upsample11->getOutput(0), conv6->getOutput(0)};
@@ -590,7 +590,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetM(nvinfer1::IBuilder* builder, nvinf
 
     nvinfer1::IResizeLayer* upsample14 = network->addResize(*conv13->getOutput(0));
     assert(upsample14);
-    upsample14->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample14->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample14->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor15[] = {upsample14->getOutput(0), conv4->getOutput(0)};
@@ -761,7 +761,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetM(nvinfer1::IBuilder* builder, nvinf
     yolo->getOutput(0)->setName(kOutputTensorName);
     network->markOutput(*yolo->getOutput(0));
 
-    config->setMaxWorkspaceSize(16 * (1 << 20));
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 16 * (1 << 20));
 
 #if defined(USE_FP16)
     config->setFlag(nvinfer1::BuilderFlag::kFP16);
@@ -831,7 +831,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetBL(nvinfer1::IBuilder* builder, nvin
     float scale[] = {1.0, 1.0, 2.0, 2.0};
     nvinfer1::IResizeLayer* upsample11 = network->addResize(*conv10->getOutput(0));
     assert(upsample11);
-    upsample11->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample11->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample11->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor12[] = {upsample11->getOutput(0), conv6->getOutput(0)};
@@ -842,7 +842,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetBL(nvinfer1::IBuilder* builder, nvin
 
     nvinfer1::IResizeLayer* upsample14 = network->addResize(*conv13->getOutput(0));
     assert(upsample14);
-    upsample14->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample14->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample14->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor15[] = {upsample14->getOutput(0), conv4->getOutput(0)};
@@ -1013,7 +1013,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetBL(nvinfer1::IBuilder* builder, nvin
     yolo->getOutput(0)->setName(kOutputTensorName);
     network->markOutput(*yolo->getOutput(0));
 
-    config->setMaxWorkspaceSize(16 * (1 << 20));
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 16 * (1 << 20));
 
 #if defined(USE_FP16)
     config->setFlag(nvinfer1::BuilderFlag::kFP16);
@@ -1083,7 +1083,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetX(nvinfer1::IBuilder* builder, nvinf
     float scale[] = {1.0, 1.0, 2.0, 2.0};
     nvinfer1::IResizeLayer* upsample11 = network->addResize(*conv10->getOutput(0));
     assert(upsample11);
-    upsample11->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample11->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample11->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor12[] = {upsample11->getOutput(0), conv6->getOutput(0)};
@@ -1094,7 +1094,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetX(nvinfer1::IBuilder* builder, nvinf
 
     nvinfer1::IResizeLayer* upsample14 = network->addResize(*conv13->getOutput(0));
     assert(upsample14);
-    upsample14->setResizeMode(nvinfer1::ResizeMode::kNEAREST);
+    upsample14->setResizeMode(nvinfer1::InterpolationMode::kNEAREST);
     upsample14->setScales(scale, 4);
 
     nvinfer1::ITensor* inputTensor15[] = {upsample14->getOutput(0), conv4->getOutput(0)};
@@ -1265,7 +1265,7 @@ nvinfer1::IHostMemory* buildEngineYolov10DetX(nvinfer1::IBuilder* builder, nvinf
     yolo->getOutput(0)->setName(kOutputTensorName);
     network->markOutput(*yolo->getOutput(0));
 
-    config->setMaxWorkspaceSize(16 * (1 << 20));
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 16 * (1 << 20));
 
 #if defined(USE_FP16)
     config->setFlag(nvinfer1::BuilderFlag::kFP16);

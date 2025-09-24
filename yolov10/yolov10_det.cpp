@@ -73,13 +73,19 @@ void deserialize_engine(std::string& engine_name, IRuntime** runtime, ICudaEngin
 
 void prepare_buffer(ICudaEngine* engine, float** input_buffer_device, float** output_buffer_device,
                     float** output_buffer_host) {
-    assert(engine->getNbBindings() == 2);
+    assert(engine->getNbIOTensors() == 2);
     // In order to bind the buffers, we need to know the names of the input and output tensors.
     // Note that indices are guaranteed to be less than IEngine::getNbBindings()
-    const int inputIndex = engine->getBindingIndex(kInputTensorName);
-    const int outputIndex = engine->getBindingIndex(kOutputTensorName);
-    assert(inputIndex == 0);
-    assert(outputIndex == 1);
+    TensorIOMode input_mode = engine->getTensorIOMode(kInputTensorName);
+    if (input_mode != TensorIOMode::kINPUT) {
+        std::cerr << kInputTensorName << " should be input tensor" << std::endl;
+        assert(false);
+    }
+    TensorIOMode output_mode = engine->getTensorIOMode(kOutputTensorName);
+    if (output_mode != TensorIOMode::kOUTPUT) {
+        std::cerr << kOutputTensorName << " should be output tensor" << std::endl;
+        assert(false);
+    }
     // Create GPU buffers on device
     CUDA_CHECK(cudaMalloc((void**)input_buffer_device, kBatchSize * 3 * kInputH * kInputW * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)output_buffer_device, kBatchSize * kOutputSize * sizeof(float)));
@@ -90,7 +96,9 @@ void prepare_buffer(ICudaEngine* engine, float** input_buffer_device, float** ou
 void infer(IExecutionContext& context, cudaStream_t& stream, void** buffers, float* output, int batchsize) {
     // infer on the batch asynchronously, and DMA output back to host
     auto start = std::chrono::system_clock::now();
-    context.enqueueV2(buffers, stream, nullptr);
+    context.setInputTensorAddress(kInputTensorName, buffers[0]);
+    context.setOutputTensorAddress(kOutputTensorName, buffers[1]);
+    context.enqueueV3(stream);
 
     CUDA_CHECK(cudaMemcpyAsync(output, buffers[1], batchsize * kOutputSize * sizeof(float), cudaMemcpyDeviceToHost,
                                stream));
@@ -217,12 +225,6 @@ int main(int argc, char** argv) {
         cuda_batch_preprocess(img_batch, device_buffers[0], kInputW, kInputH, stream);
         // Run inference
         infer(*context, stream, (void**)device_buffers, output_buffer_host, kBatchSize);
-        // output_buffer_host保存前100个值到文件
-        //        std::ofstream out_file("../output.txt");
-        //        for (int i = 0; i < 100; i++) {
-        //            out_file << output_buffer_host[i] << std::endl;
-        //        }
-        //        out_file.close();
 
         std::vector<std::vector<Detection>> res_batch;
         batch_topk(res_batch, output_buffer_host, img_batch.size(), kOutputSize, kConfThresh);
